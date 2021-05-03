@@ -16,6 +16,8 @@ class FallDetector:
         self.frame_rate = args.frame_rate
         self.telegram_alert = args.telegram_alert
         self.chunk_seconds = args.chunk_seconds
+        self.path_cameras = args.path_cameras
+        self.video_name = "temp/state"
 
         show_args(args)
 
@@ -24,17 +26,17 @@ class FallDetector:
         with open(args.path_model_header) as f:
             self.model_header = f.readline().split(",")
 
-    def estimate_pose(self, camera):
+    def estimate_pose(self, camera_url, camera_name="Unknow"):
         pe = PoseEstimation()
-        camera = cv2.VideoCapture(camera)
+        camera = cv2.VideoCapture(camera_url)
         video_rate = int(np.round(camera.get(cv2.CAP_PROP_FPS) / self.frame_rate))
         total_frames = self.frame_rate * self.chunk_seconds
         print("input frames per seconds", camera.get(cv2.CAP_PROP_FPS))
         state = "Nothing"
         # I use deque because I want to delete de first element when other one is added
         video_keypoints = deque(maxlen=total_frames)
-        video_to_send = cv2.VideoWriter("state.mp4", cv2.VideoWriter_fourcc(*'mp4v'),
-                                        self.frame_rate, (pe.expected_pixels, pe.expected_pixels))
+        video_to_send = deque(maxlen=total_frames)
+
         times = []
         frame_number = -1
         while True:
@@ -45,11 +47,12 @@ class FallDetector:
             frame_number = (frame_number + 1) % video_rate
 
             if frame_number == 0:
+
                 # Resize img
                 frame = self.make_square(frame, pe.expected_pixels)
 
                 # Save the frame
-                video_to_send.write(frame)
+                video_to_send.append(np.copy(frame))
 
                 # Get body parts
                 start = time.time()
@@ -73,36 +76,42 @@ class FallDetector:
                 video_keypoints.append(np.reshape(pose, -1))
 
                 if len(video_keypoints) == total_frames:
-                    video_to_send.release()
-                    state = self.check_state(np.reshape(video_keypoints, (1, -1)), "state.mp4")
+                    # video_to_send.release()
+                    state = self.check_state(np.reshape(video_keypoints, (1, -1)), np.copy(video_to_send),
+                                             camera_name, pe.expected_pixels)
 
                     # Clear queue
                     video_keypoints.clear()
+                    video_to_send.clear()
 
-                    video_to_send = cv2.VideoWriter("state.mp4", cv2.VideoWriter_fourcc(*'mp4v'),
-                                                    self.frame_rate, (pe.expected_pixels, pe.expected_pixels))
+                #self.show_results(frame, state)
 
-                self.show_results(frame, state)
-
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+            #if cv2.waitKey(1) & 0xFF == ord('q'):
+            #    break
             #
         mean = np.mean(times)
         camera.release()
-        video_to_send.release()
         cv2.destroyAllWindows()
 
-    def check_state(self, video_keypoints, video_to_send):
+    def check_state(self, video_keypoints, video_to_send, camera_name, video_size):
         state = str(self.model.predict(video_keypoints)[0])
-        if state == "Fall":
-            self.report(message="⚠ Fall detected ⚠", caption="The video of the fall", video=video_to_send)
-        elif state == "Recover":
-            self.report(message="👍🏼Recover detected!👍🏼", caption="The video of the recover", video=video_to_send)
+        if state == "Fall" or state == "Recover":
+            telegram_t = threading.Thread(target=self.report,
+                                          args=(video_to_send, video_size, "{} detected".format(state),
+                                                camera_name))
+            telegram_t.start()
         return state
 
-    def report(self, message=None, caption=None, video=None):
+    def report(self, video_to_send, video_size, message=None, caption=None):
+        file_video_name = "{}{}.mp4".format(self.video_name, caption)
+        video = cv2.VideoWriter(file_video_name, cv2.VideoWriter_fourcc(*'mp4v'),
+                                        self.frame_rate, (video_size, video_size))
+        for frame in video_to_send:
+            video.write(frame)
+        video.release()
+
         telegram_send.send(messages=[message])
-        telegram_send.send(captions=[caption], videos=[open(video, 'rb')])
+        telegram_send.send(captions=[caption], videos=[open(file_video_name, 'rb')])
 
     def make_square(self, img, expected_pixels):
         max_side = max(img.shape[0:2])
@@ -134,4 +143,6 @@ if __name__ == "__main__":
     # Start the program
     fall_detector = FallDetector(args)
 
-    fall_detector.estimate_pose(r"D:\Universidad\TFG\videos\2-4.mp4")
+    detector = threading.Thread(target=fall_detector.estimate_pose,
+                                args=(r"D:\Universidad\TFG\videos\2-4.mp4", "Room",))
+    detector.start()

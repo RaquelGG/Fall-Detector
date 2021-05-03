@@ -7,6 +7,7 @@ def get_args():
     fall_model_path = "human_state_classifier/model/fall_detection.sav"
     chunk_seconds = 3
     path_model_header = "human_state_classifier/model/header.txt"
+    path_cameras = None
 
     parser = argparse.ArgumentParser(description="Real-Time Fall Detector",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -30,6 +31,10 @@ def get_args():
                         help="Path to the human state classifier model header.",
                         type=str, default=path_model_header)
 
+    parser.add_argument("-c", "--path_cameras",
+                        help="Path to the configuration file containing the camera urls",
+                        type=str, default=path_cameras)
+
     return parser
 
 
@@ -37,5 +42,6 @@ def show_args(args):
     print("Seconds per chunk:", args.chunk_seconds, "s")
     print("Frames per second:", args.frame_rate, "frames")
     print("Sends an alert when a fall is detected:", args.telegram_alert)
-    print("Path to the human state classifier model:'", args.fall_model_path, "'")
+    print("Path to the human state classifier model: '", args.fall_model_path, "'")
+    print("Path to the configuration file containing the camera urls: '", args.path_cameras, "'")
 
