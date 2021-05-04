@@ -16,7 +16,6 @@ class FallDetector:
         self.frame_rate = args.frame_rate
         self.telegram_alert = args.telegram_alert
         self.chunk_seconds = args.chunk_seconds
-        self.path_cameras = args.path_cameras
         self.video_name = "temp/state"
 
         show_args(args)
@@ -77,41 +76,45 @@ class FallDetector:
 
                 if len(video_keypoints) == total_frames:
                     # video_to_send.release()
-                    state = self.check_state(np.reshape(video_keypoints, (1, -1)), np.copy(video_to_send),
-                                             camera_name, pe.expected_pixels)
+                    state = self.report_state(np.reshape(video_keypoints, (1, -1)), np.copy(video_to_send),
+                                              camera_name, pe.expected_pixels)
 
                     # Clear queue
                     video_keypoints.clear()
                     video_to_send.clear()
 
-                #self.show_results(frame, state)
+                self.show_results(frame, camera_name, state)
 
-            #if cv2.waitKey(1) & 0xFF == ord('q'):
-            #    break
-            #
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
         mean = np.mean(times)
         camera.release()
         cv2.destroyAllWindows()
 
-    def check_state(self, video_keypoints, video_to_send, camera_name, video_size):
+    def report_state(self, video_keypoints, video_to_send, camera_name, video_size):
         state = str(self.model.predict(video_keypoints)[0])
-        if state == "Fall" or state == "Recover":
+        if (state == "Fall" or state == "Recover") and self.telegram_alert:
             telegram_t = threading.Thread(target=self.report,
-                                          args=(video_to_send, video_size, "{} detected".format(state),
-                                                camera_name))
+                                          args=(video_to_send, video_size, state, camera_name))
             telegram_t.start()
         return state
 
-    def report(self, video_to_send, video_size, message=None, caption=None):
-        file_video_name = "{}{}.mp4".format(self.video_name, caption)
+    def report(self, video_to_send, video_size, state, camera_name=None):
+        file_video_name = "{}{}.mp4".format(self.video_name, camera_name)
         video = cv2.VideoWriter(file_video_name, cv2.VideoWriter_fourcc(*'mp4v'),
-                                        self.frame_rate, (video_size, video_size))
+                                self.frame_rate, (video_size, video_size))
         for frame in video_to_send:
             video.write(frame)
         video.release()
 
+        alert_icon = "⚠"
+        if state == "Recover":
+            alert_icon = "👍🏼"
+
+        message = "{}{} detected{}: {}".format(alert_icon, state, camera_name, alert_icon)
         telegram_send.send(messages=[message])
-        telegram_send.send(captions=[caption], videos=[open(file_video_name, 'rb')])
+        telegram_send.send(captions=[message], videos=[open(file_video_name, 'rb')])
 
     def make_square(self, img, expected_pixels):
         max_side = max(img.shape[0:2])
@@ -127,13 +130,13 @@ class FallDetector:
 
         return cv2.resize(square_img, (expected_pixels, expected_pixels))
 
-    def show_results(self, img, state):
+    def show_results(self, img, camera, state):
         org = (40, 40)
         color = (255, 255, 0)
         thickness = 1
         font_scale = 1
         font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.imshow("frame", cv2.putText(img, state, org, font, font_scale, color, thickness, cv2.LINE_AA))
+        cv2.imshow(camera, cv2.putText(img, state, org, font, font_scale, color, thickness, cv2.LINE_AA))
 
 
 if __name__ == "__main__":
@@ -142,7 +145,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     # Start the program
     fall_detector = FallDetector(args)
+    path_cameras = open(args.path_cameras, 'r')
+    for line in path_cameras.readlines():
+        if line.startswith("#") or line == '':
+            continue
 
-    detector = threading.Thread(target=fall_detector.estimate_pose,
-                                args=(r"D:\Universidad\TFG\videos\2-4.mp4", "Room",))
-    detector.start()
+        parts = line.strip().split(", ")
+        print("Starting camera {}".format(parts[1]))
+        threading.Thread(target=fall_detector.estimate_pose,
+                         args=(parts[0], parts[1],)).start()

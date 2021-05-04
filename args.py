@@ -7,7 +7,7 @@ def get_args():
     fall_model_path = "human_state_classifier/model/fall_detection.sav"
     chunk_seconds = 3
     path_model_header = "human_state_classifier/model/header.txt"
-    path_cameras = None
+    path_cameras = "cameras.conf"
 
     parser = argparse.ArgumentParser(description="Real-Time Fall Detector",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
