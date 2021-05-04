@@ -4,7 +4,7 @@ import argparse
 def get_args():
     frame_rate = 5
     telegram_alert = True
-    fall_model_path = "human_state_classifier/model/fall_detection.sav"
+    fall_model_path = "human_state_classifier/model/HSC.sav"
     chunk_seconds = 3
     path_model_header = "human_state_classifier/model/header.txt"
     path_cameras = "cameras.conf"
