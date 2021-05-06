@@ -7,6 +7,7 @@ from collections import deque
 import time
 import telegram_send
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 
 class FallDetector:
@@ -24,6 +25,10 @@ class FallDetector:
         self.model = pickle.load(open(args.fall_model_path, 'rb'))
         with open(args.path_model_header) as f:
             self.model_header = f.readline().split(",")
+
+        # Threads to send Telegram alerts
+        if self.telegram_alert:
+            self.threads_pool = ThreadPoolExecutor(max_workers=2)
 
     def estimate_pose(self, camera_url, camera_name="Unknow"):
         pe = PoseEstimation()
@@ -95,9 +100,7 @@ class FallDetector:
     def report_state(self, video_keypoints, video_to_send, camera_name, video_size):
         state = str(self.model.predict(video_keypoints)[0])
         if (state == "Fall" or state == "Recover") and self.telegram_alert:
-            telegram_t = threading.Thread(target=self.report,
-                                          args=(video_to_send, video_size, state, camera_name))
-            telegram_t.start()
+            self.threads_pool.submit(self.report, video_to_send, video_size, state, camera_name)
         return state
 
     def report(self, video_to_send, video_size, state, camera_name=None):
