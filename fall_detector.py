@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 class FallDetector:
+    """A Class that sends an alert via Telegram in case it detects a fall or recovery in the video inputs."""
 
     def __init__(self, args):
         # Get args
@@ -28,9 +29,15 @@ class FallDetector:
 
         # Threads to send Telegram alerts
         if self.telegram_alert:
-            self.threads_pool = ThreadPoolExecutor(max_workers=2)
+            self.threads_pool = ThreadPoolExecutor(max_workers=1)
 
     def estimate_pose(self, camera_url, camera_name="Unknow"):
+        """ Gets the keypoints using a PoseNet model of each frame in `camera_url` video and once the queue is full,
+        check the status by calling check_status method, empties the queue and repeat the process.
+
+        :param camera_url: The Url/path to the input video
+        :param camera_name: A descriptive camera name (default: "Unknow")
+        """
         pe = PoseEstimation()
         camera = cv2.VideoCapture(camera_url)
         video_rate = int(np.round(camera.get(cv2.CAP_PROP_FPS) / self.frame_rate))
@@ -51,7 +58,6 @@ class FallDetector:
             frame_number = (frame_number + 1) % video_rate
 
             if frame_number == 0:
-
                 # Resize img
                 frame = self.make_square(frame, pe.expected_pixels)
 
@@ -97,16 +103,33 @@ class FallDetector:
         camera.release()
         cv2.destroyAllWindows()
 
-    def report_state(self, video_keypoints, video_to_send, camera_name, video_size):
+    def report_state(self, video_keypoints, video_to_send, camera_name, video_dim):
+        """ Checks if in `video_keypoints` there is a fall or recovery using the HSC model, if so, calls the report
+        method and return the state.
+
+        :param video_keypoints: A queue containing the keypoints of a video chunk
+        :param video_to_send: A queue containing the frames of a video chunk
+        :param camera_name: A descriptive camera name
+        :param video_dim: The dimension of the output video
+        :return: A string with the state obtained: "Fall" / "Nothing" / "Recover"
+        """
         state = str(self.model.predict(video_keypoints)[0])
         if (state == "Fall" or state == "Recover") and self.telegram_alert:
-            self.threads_pool.submit(self.report, video_to_send, video_size, state, camera_name)
+            self.threads_pool.submit(self.report, video_to_send, video_dim, state, camera_name)
         return state
 
-    def report(self, video_to_send, video_size, state, camera_name=None):
+    def report(self, video_to_send, video_dim, state, camera_name):
+        """ Sends a message containing the `state`, the `camera_name` that detected it and the `video_to_send`
+        with dimensions `vid_dim`x`vid_dim` via Telegram.
+
+        :param video_to_send: A queue containing the frames of the fall / recover
+        :param video_dim: The dimension of the output video
+        :param state: A string with the state obtained: "Fall" / "Nothing" / "Recover"
+        :param camera_name: A descriptive camera name
+        """
         file_video_name = "{}{}.mp4".format(self.video_name, camera_name)
         video = cv2.VideoWriter(file_video_name, cv2.VideoWriter_fourcc(*'mp4v'),
-                                self.frame_rate, (video_size, video_size))
+                                self.frame_rate, (video_dim, video_dim))
         for frame in video_to_send:
             video.write(frame)
         video.release()
@@ -119,7 +142,14 @@ class FallDetector:
         telegram_send.send(messages=[message])
         telegram_send.send(captions=[message], videos=[open(file_video_name, 'rb')])
 
-    def make_square(self, img, expected_pixels):
+    def make_square(self, img, expected_pixels=257):
+        """ Resizes the `img` image saving its proportions to have a square image with each side of size
+        `expected_pixels`.
+
+        :param img: The image to resize
+        :param expected_pixels: The expected pixels for each side (default: 257)
+        :return: A square image
+        """
         max_side = max(img.shape[0:2])
 
         # Background square
@@ -133,13 +163,19 @@ class FallDetector:
 
         return cv2.resize(square_img, (expected_pixels, expected_pixels))
 
-    def show_results(self, img, camera, state):
+    def show_results(self, frame, camera, state):
+        """ Displays the current `frame` of the live video from the `camera` and the detected `state`
+
+        :param frame: The current frame to show
+        :param camera: The name of the camera which the frame is obtained.
+        :param state: The state detected by the method `check_state`.
+        """
         org = (40, 40)
         color = (255, 255, 0)
         thickness = 1
         font_scale = 1
         font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.imshow(camera, cv2.putText(img, state, org, font, font_scale, color, thickness, cv2.LINE_AA))
+        cv2.imshow(camera, cv2.putText(frame, state, org, font, font_scale, color, thickness, cv2.LINE_AA))
 
 
 if __name__ == "__main__":
@@ -148,6 +184,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     # Start the program
     fall_detector = FallDetector(args)
+    # Get the cameras
     path_cameras = open(args.path_cameras, 'r')
     for line in path_cameras.readlines():
         if line.startswith("#") or line == '':
