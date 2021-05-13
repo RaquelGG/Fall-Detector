@@ -81,6 +81,27 @@ class PoseEstimation:
 
         return img
 
+    def make_square(self, img, expected_pixels=257):
+        """ Resizes the `img` image saving its proportions to have a square image with each side of size
+        `expected_pixels`.
+
+        :param img: The image to resize
+        :param expected_pixels: The expected pixels for each side (default: 257)
+        :return: A square image
+        """
+        max_side = max(img.shape[0:2])
+
+        # Background square
+        square_img = np.zeros((max_side, max_side, 3), np.uint8)
+
+        # Getting the centering position
+        ax, ay = (max_side - img.shape[1]) // 2, (max_side - img.shape[0]) // 2
+
+        # Pasting the image in a centering position
+        square_img[ay:img.shape[0] + ay, ax:ax + img.shape[1]] = img
+
+        return cv2.resize(square_img, (expected_pixels, expected_pixels))
+
 
 def get_keypoints_positions(heatmap, offsets):
     """ Returns the exact coordinates of the keypoints from `heatmap` and `offsets`.

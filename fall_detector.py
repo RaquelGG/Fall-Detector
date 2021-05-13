@@ -18,7 +18,10 @@ class FallDetector:
         self.frame_rate = args.frame_rate
         self.telegram_alert = args.telegram_alert
         self.chunk_seconds = args.chunk_seconds
+        self.display_video = args.display_video
+        self.posenet_model_path = args.posenet_model_path
         self.video_name = "temp/state"
+
 
         show_args(args)
 
@@ -38,17 +41,16 @@ class FallDetector:
         :param camera_url: The Url/path to the input video
         :param camera_name: A descriptive camera name (default: "Unknow")
         """
-        pe = PoseEstimation()
+        pe = PoseEstimation(self.posenet_model_path)
         camera = cv2.VideoCapture(camera_url)
         video_rate = int(np.round(camera.get(cv2.CAP_PROP_FPS) / self.frame_rate))
         total_frames = self.frame_rate * self.chunk_seconds
         print("input frames per seconds", camera.get(cv2.CAP_PROP_FPS))
         state = "Nothing"
-        # I use deque because I want to delete de first element when other one is added
+
         video_keypoints = deque(maxlen=total_frames)
         video_to_send = deque(maxlen=total_frames)
 
-        times = []
         frame_number = -1
         while True:
             ret, frame = camera.read()
@@ -59,19 +61,12 @@ class FallDetector:
 
             if frame_number == 0:
                 # Resize img
-                frame = self.make_square(frame, pe.expected_pixels)
-
+                frame = pe.make_square(frame, pe.expected_pixels)
                 # Save the frame
-                video_to_send.append(np.copy(frame))
-
+                if self.telegram_alert:
+                    video_to_send.append(np.copy(frame))
                 # Get body parts
-                start = time.time()
                 pose = pe.get_pose_estimation(frame)
-                end = time.time()
-
-                # Measuring time
-                total_time = end - start
-                times.append(total_time)
 
                 # Normalizing position
                 # average_x = np.mean(pose[:, 0])
@@ -86,7 +81,6 @@ class FallDetector:
                 video_keypoints.append(np.reshape(pose, -1))
 
                 if len(video_keypoints) == total_frames:
-                    # video_to_send.release()
                     state = self.report_state(np.reshape(video_keypoints, (1, -1)), np.copy(video_to_send),
                                               camera_name, pe.expected_pixels)
 
@@ -94,12 +88,13 @@ class FallDetector:
                     video_keypoints.clear()
                     video_to_send.clear()
 
-                self.show_results(frame, camera_name, state)
+                if self.display_video:
+                    self.show_results(frame, camera_name, state)
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+
+            if cv2.waitKey(1) and 0xFF == ord('q') and self.display_video:
                 break
 
-        mean = np.mean(times)
         camera.release()
         cv2.destroyAllWindows()
 
@@ -141,27 +136,6 @@ class FallDetector:
         message = "{}{} detected{}: {}".format(alert_icon, state, camera_name, alert_icon)
         telegram_send.send(messages=[message])
         telegram_send.send(captions=[message], videos=[open(file_video_name, 'rb')])
-
-    def make_square(self, img, expected_pixels=257):
-        """ Resizes the `img` image saving its proportions to have a square image with each side of size
-        `expected_pixels`.
-
-        :param img: The image to resize
-        :param expected_pixels: The expected pixels for each side (default: 257)
-        :return: A square image
-        """
-        max_side = max(img.shape[0:2])
-
-        # Background square
-        square_img = np.zeros((max_side, max_side, 3), np.uint8)
-
-        # Getting the centering position
-        ax, ay = (max_side - img.shape[1]) // 2, (max_side - img.shape[0]) // 2
-
-        # Pasting the image in a centering position
-        square_img[ay:img.shape[0] + ay, ax:ax + img.shape[1]] = img
-
-        return cv2.resize(square_img, (expected_pixels, expected_pixels))
 
     def show_results(self, frame, camera, state):
         """ Displays the current `frame` of the live video from the `camera` and the detected `state`
