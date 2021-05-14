@@ -35,7 +35,7 @@ Pero si quieres, también puedes entrenar el modelo tú mismo/a, puedes ver los 
 1. ¿Te acuerdas del modelo que dije que guardaras? 📁, es hora de usarlo, **indica la `ruta` donde tienes el modelo de estimación de pose PoseNet**:
     > py fall_detector -p "`ruta`"
    
-3. También puedes añadir otros parámetros, como, por ejemplo, para ver las cámaras y la situación que han detectado.
+3. También puedes añadir otros parámetros, como, por ejemplo, ver las cámaras y la situación que han detectado.
     > py fall_detector -p "`ruta`" -d True
    
 4. Para ver el resto de parámetros usa `-h`
