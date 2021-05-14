@@ -1,6 +1,6 @@
 # A Real-Time Fall Detection System: A video based solution
 
-Este programa es capaz de detectar caídas a tiempo real haciendo uso de las imágenes de una cámara o varias cámaras.
+Este programa es capaz de detectar caídas a tiempo real haciendo uso de las imágenes de una o varias cámaras.
 
 ## Puesta en marcha 🚀
 Para ejecutar el programa primero necesitas instalar las siguientes bibliotecas:
